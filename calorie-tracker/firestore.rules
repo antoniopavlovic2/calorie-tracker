@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function owner(uid) { return signedIn() && request.auth.uid == uid; }
+    function admin() { return signedIn() && request.auth.token.admin == true; }
+    function validNutrition(n) {
+      return n is map && n.keys().hasAll(['calories','protein','carbs','sugars','fat','saturatedFat','fiber','salt'])
+        && n.keys().hasOnly(['calories','protein','carbs','sugars','fat','saturatedFat','fiber','salt'])
+        && n.calories is number && n.calories >= 0 && n.calories <= 1000
+        && n.protein is number && n.protein >= 0 && n.protein <= 100
+        && n.carbs is number && n.carbs >= 0 && n.carbs <= 100
+        && n.sugars is number && n.sugars >= 0 && n.sugars <= 100
+        && n.fat is number && n.fat >= 0 && n.fat <= 100
+        && n.saturatedFat is number && n.saturatedFat >= 0 && n.saturatedFat <= 100
+        && n.fiber is number && n.fiber >= 0 && n.fiber <= 100
+        && n.salt is number && n.salt >= 0 && n.salt <= 100;
+    }
+    match /products/{productId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.keys().hasOnly(['name','brand','nutrition','createdAt','createdBy'])
+        && request.resource.data.keys().hasAll(['name','brand','nutrition','createdAt','createdBy'])
+        && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 150
+        && request.resource.data.brand is string && request.resource.data.brand.size() <= 150
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && validNutrition(request.resource.data.nutrition);
+      allow update, delete: if admin();
+    }
+    match /users/{uid} {
+      allow read, create, update: if owner(uid);
+      allow delete: if false;
+      match /settings/{settingId} {
+        allow read, write: if owner(uid);
+      }
+      match /foodEntries/{entryId} {
+        allow read, write: if owner(uid);
+      }
+    }
+  }
+}
